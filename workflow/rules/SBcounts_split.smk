@@ -44,11 +44,11 @@ def get_resources(sample):
         time = 4*60*60
     elif 10 < folder_size < 20:
         time = 4*60*60
-    elif 30 > folder_size > 40:
+    elif 20 < folder_size < 30:
         time = 5*60*60
-    elif 50 > folder_size > 40:
+    elif 30 < folder_size < 40:
         time = 6*60*60
-    elif 70 > folder_size > 60:
+    elif 40 < folder_size < 60:
         time = 7*60*60
     else:
         time = 10*60*60
@@ -103,10 +103,9 @@ rule SBcounts:
         """
         (
         set -euo pipefail
-        ulimit -v unlimited -d unlimited
         umask 000
 
-        export PATH="${params.conda_path}:$PATH"
+        export PATH="{params.conda_path}:$PATH"
         export PATH="{params.env_path}/bin:$PATH"
         export JULIA_PACKAGES_PATH="{params.env_path}/share/julia/packages"
         export JULIA_DEPOT_PATH="{params.env_path}/share/julia/tmp"

@@ -5,7 +5,10 @@
 umask 000
 current_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 source "$current_dir/config/config.sh"
-source activate "$ENV_PATH"
+
+# Activate conda environment (FASRC/SLURM-compatible)
+eval "$(conda shell.bash hook)"
+conda activate "$ENV_PATH"
 
 
 # Function to print help information
@@ -22,7 +25,8 @@ print_help() {
     echo "  -cb, -run_cellbender          Run cellbender based on Cellranegr count results."
     echo "  -sb, -run_SBcounts            Run Spatial beads counts."
     echo "  -sp, -run_spatial             Run Spatial analysis for cell positionings."
-    echo "  -us, -use_sheet               Get input sheets form the current working run."
+    echo "  -us, -use_sheet               Use input sheets from the current working run (re-run mode)."
+    echo "  -csv [file]                   Use a local CSV file instead of Google Sheets (see make_input_csv.py)."
     echo "  -mv, -mv_file                 Move results to store path."
     echo "  -gb, -generate_bam            Generate bams when running Cellranger."
     echo "  -uf, -upload_fastq            Upload fastqs to google bucket."
@@ -58,6 +62,7 @@ rm_bam=false
 force=false
 expected_cells=""
 total_droplets_included=""
+input_csv=""
 
 # Parse input parameters
 while [[ "$#" -gt 0 ]]; do
@@ -70,6 +75,7 @@ while [[ "$#" -gt 0 ]]; do
         -sb|-run_SBcounts) run_SBcounts=true; shift ;;
         -sp|-run_spatial) run_spatial=true; shift ;;
         -us|-use_sheet) use_sheet=true; shift ;;
+        -csv) input_csv="$2"; shift 2 ;;
         -mv|-mv_file) mv_file=true; shift ;;
         -gb|-generate_bam) generate_bam=true; shift ;;
         -uf|-upload_fastq) upload_fastq=true; shift ;;
@@ -130,11 +136,12 @@ if [[ "$run_all" = "true" ]]; then
     run_SBcounts=true
     run_spatial=true
 fi
-# Check if the cluster path is valid
-if [[ -z "$CLUSTER_PATH" ]] || [[ ! -e "$CLUSTER_PATH" ]]; then
-    use_cluster=false
-else
+
+# Check if SLURM is available
+if command -v sbatch &>/dev/null; then
     use_cluster=true
+else
+    use_cluster=false
 fi
 
 
@@ -193,13 +200,31 @@ base_sheet_folder="$log_folder/input"
 source "$base_src_path/SubmitFuncs/submit_functions.sh"
 
 
-###### Read google sheet and check files
-if [ "$use_sheet" = "false" ]; then
+###### Generate input files — three modes:
+#   1. -csv <file>  : generate from local CSV (no Google Sheets needed)
+#   2. -us          : reuse input files from a previous run (skip generation entirely)
+#   3. default      : read from Google Sheets (original behavior)
+if [ -n "$input_csv" ]; then
+    echo -e "\n------------------------ Generating input files from local CSV ------------------------ "
+    if [ ! -f "$input_csv" ]; then
+        echo "ERROR: CSV file not found: $input_csv"
+        exit 1
+    fi
+    "$python_path" "$base_src_path/SubmitFuncs/make_input_csv.py" \
+        "$input_csv" "$bcl" "$BASE_DATA_PATH" "$log_folder"
+    if [ $? -ne 0 ]; then
+        echo "ERROR: make_input_csv.py failed. Check your CSV file."
+        exit 1
+    fi
+    chmod -R 777 "$log_folder" >/dev/null 2>&1
+elif [ "$use_sheet" = "false" ]; then
     echo -e "\n------------------------ Reading google sheet and checking files ------------------------ "
     submit_read_sheet_job "$use_cluster"
     cleanup_snakemake_logs "$(pwd)" "$log_folder" "$base_log_path"
-    chmod -R 777 "$log_folder" >/dev/null 2>&1 
-fi 
+    chmod -R 777 "$log_folder" >/dev/null 2>&1
+else
+    echo -e "\nUsing existing input sheets from: $log_folder"
+fi
 
 
 #---------------------------------------------------------------------------------------------------------------------------------------
@@ -215,7 +240,6 @@ if [ "$run_mkfastq" = "true" ]; then
         done
         submit_batch_jobs "$use_cluster" "$index_list" "$size_mk" "submit_mkfastq_job" "Cellranger mkfastq"
         sleep 10
-        # check_results "$check_list" "$base_fastq_path" "dir" "outs" "Cellranger mkfastq completed!" "Cellranger mkfastq did not complete."
         cleanup_snakemake_logs "$(pwd)" "$log_folder" "$base_log_path"
     else
         echo -e "\nRequired Cellranger mkfastq results already exist."
@@ -272,7 +296,6 @@ if [ "$run_RNAcounts" = "true" ]; then
         for item in "${sample_list_check[@]}"; do
             modified_item=$(echo "$item" | sed -e 's/count_//g' -e 's/vdj_//g' -e 's/multiome_//g')
             check_list+=("$modified_item")
-            # download files from google cloud if files do not exist or forced to download
             file_exist=false
             if find "${base_fastq_path}/${modified_item}/" -name "${modified_item}*_S*_L*_R1_*" -print -quit | grep -q . && find "${base_fastq_path}/${modified_item}/" -name "${modified_item}*_S*_L*_R2_*" -print -quit | grep -q .; then
                 file_exist=true
@@ -284,7 +307,6 @@ if [ "$run_RNAcounts" = "true" ]; then
 
         submit_batch_jobs "$use_cluster" "$sample_list" "$size_cr" "submit_RNAcounts_job" "Cellranger count"
         sleep 10
-        # check_results "$check_list" "$base_count_path" "dir" "outs" "Cellranger counts completed!" "Cellranger counts did not complete."
         cleanup_snakemake_logs "$(pwd)" "$log_folder" "$base_log_path"
     else
         echo -e "\nNo samples to run or required Cellranger count results already exist."
@@ -307,7 +329,6 @@ if [ "$run_cellbender" = "true" ]; then
         done
         submit_batch_jobs "$use_cluster" "$sample_list" "$size_cb" "submit_Cellbender_job" "Cellbender" "none" "$expected_cells" "$total_droplets_included"
         sleep 10
-        # check_results "$check_list" "$base_count_path" "file" "cellbender_outs/cellbender_output_filtered.h5" "Cellbender completed!" "Cellbender did not complete."
         cleanup_snakemake_logs "$(pwd)" "$log_folder" "$base_log_path"
     else
         echo -e "\nNo samples to run or required Cellbender results already exist."
@@ -373,7 +394,6 @@ if [ "$run_SBcounts" = "true" ]; then
         echo -e "\n------------------------ Running SBcounts ------------------------ "
         submit_batch_jobs "$use_cluster" "${sample_list[*]}" "$size_sb" "submit_SBcount_job" "SBcount" "${match_rna_list[*]}"
         sleep 10
-        # check_results "$match_rna_list" "$base_spatial_path" "file" "SBcounts/SBcounts.h5" "SBcount completed!" "SBcount did not complete."
         cleanup_snakemake_logs "$(pwd)" "$log_folder" "$base_log_path"
     else
         echo -e "\nNo samples to run or required SBcount results already exist."
@@ -398,7 +418,6 @@ if [ "$run_spatial" = "true" ]; then
         echo -e "\n------------------------ Running Spatial analysis ------------------------ "
         submit_batch_jobs "$use_cluster" "$sample_list" "$size_sp" "submit_Spatial_job" "Spatial analysis"
         sleep 10
-        # check_results "$sample_list" "$base_spatial_path" "file" "Positions/seurat.qs" "Spatial analysis completed!" "Spatial analysis did not complete."
         cleanup_snakemake_logs "$(pwd)" "$log_folder" "$base_log_path"
     else
         echo -e "\nNo samples to run or required Spatial analysis results already exist."

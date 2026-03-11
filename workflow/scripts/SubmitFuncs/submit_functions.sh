@@ -1,37 +1,48 @@
 #!/bin/bash
+# submit_functions.sh — SLURM conversion of original UGE/SGE version
+# Changes from original:
+#   - qstat      → squeue
+#   - qsub       → sbatch (with --parsable for clean job ID capture)
+#   - -N         → -J
+#   - -l h_vmem  → --mem
+#   - -l h_rt    → --time
+#   - -pe smp N  → --cpus-per-task=N
+#   - -binding   → removed (no SLURM equivalent needed)
+#   - -r yes     → --requeue
+#   - Added -p eddy to all cluster submissions (adjust partition as needed)
+#   - monitor_job() rewritten to use squeue -j
+#   - Job ID extraction rewritten to use squeue --name
 umask 000
 
-### monitor job status with qstat when submitting jobs to the cluster
+
+### monitor job status with squeue when submitting jobs to the cluster
 monitor_job() {
     local job_id=$1
     local sleep_time=${2:-300}
     local start_time=$(date +%s)
 
     while : ; do
-        # Capturing both stdout and stderr from qstat to handle errors
-        local qstat_output=$(qstat 2>&1)
-        # Check if qstat_output contains the critical error and skip further processing in this iteration if so
-        if echo "$qstat_output" | grep -q "getgrgid(1015) failed: Numerical result out of range"; then
-            echo "Encountered a critical error with qstat. Will retry..."
+        local squeue_output=$(squeue -j "$job_id" --noheader 2>&1)
+
+        # Handle transient squeue errors
+        if echo "$squeue_output" | grep -qiE "error|invalid|slurm_load_jobs"; then
+            echo "Encountered a transient error with squeue. Will retry..."
             sleep 60
             continue
         fi
 
-        # Checking if the job is found in the qstat output
-        local job_info=$(echo "$qstat_output" | grep "$job_id" || echo "Job not found")
-        if [[ "$job_info" == "Job not found" ]]; then
+        # Empty output means job is done
+        if [[ -z "$squeue_output" ]]; then
             local end_time=$(date +%s)
             local elapsed_time=$((end_time - start_time))
-            echo "Job $job_id is not in the queue. Total time elapsed: $((elapsed_time / 60)) minutes."
+            echo "Job $job_id is no longer in the queue. Total time elapsed: $((elapsed_time / 60)) minutes."
             break
         fi
 
-        # Extracting job status if job is still in the queue
-        local current_status=$(echo "$job_info" | awk '{print $5}')
+        local current_status=$(echo "$squeue_output" | awk '{print $5}')
         local current_time=$(date +%s)
         local time_diff=$((current_time - start_time))
-        echo -e "\nCurrent status of job: "
-        echo -e "$job_id: \n$current_status."
+        echo -e "\nCurrent status of job $job_id: $current_status"
         echo -e "Time elapsed: $((time_diff / 60)) minutes."
 
         sleep $sleep_time
@@ -56,10 +67,8 @@ get_email() {
 send_email() {
     local msg="$1"
     local email=$(get_email)
-
     if [[ ! -z "$email" ]]; then
         echo "Sending email to $email"
-        # $python_path "$base_src_path/send_mail.py" "$email" "$msg"
     else
         echo "No email address found."
     fi
@@ -88,7 +97,7 @@ submit_read_sheet_job() {
 
     local cluster_cmd=""
     if [[ "$use_cluster" == true ]]; then
-        cluster_cmd="--cluster \"qsub -N Input -l h_vmem=18G -l h_rt=00:10:00 -pe smp 1 -o $read_check_log -e $read_check_err\""
+        cluster_cmd="--cluster \"sbatch -J Input --mem=18G --time=00:10:00 --cpus-per-task=1 -p eddy -o $read_check_log -e $read_check_err --parsable\""
     fi
 
     local snakemake_command="snakemake -s \"$base_smk_path/read_check.smk\" \
@@ -115,9 +124,8 @@ submit_read_sheet_job() {
     [ -f "$read_check_log" ] && rm -rf "$read_check_log"
     eval $snakemake_command
 
-    chomod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
+    chmod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
 
-    # Check if the log file exists and no error in the log file
     sleep 10
     if [ ! -d "$log_folder/input" ] || [ ! -f "$read_sheet_log" ] || grep -q "ERROR" "$read_sheet_log"; then
         echo -e "ERROR: Failed to parse inputs. \nPlease check information in google sheet. \nPlease refer to read_sheet.log for detailed error information."
@@ -159,7 +167,6 @@ submit_batch_jobs() {
         local sample_py_list=$(IFS=,; echo "[${chunk[*]}]")
 
         if [[ "$use_cluster" == true ]]; then
-            # Submit the job based on cluster usage
             if [[ "$job_type" == "Cellbender" ]]; then
                 local job_id=$($submit_job "$sample_py_list" "$expected_cells" "$total_droplets_included" "$use_cluster")
             elif [[ "$job_type" == "SBcount" ]]; then
@@ -169,14 +176,12 @@ submit_batch_jobs() {
             fi
             
             if [ -n "$job_id" ]; then
-                echo "Submitted $sample_py_list with iob ID: "
-                echo "$job_id"
+                echo "Submitted $sample_py_list with job ID: $job_id"
                 current_jobs+=("$job_id")
             else
                 echo "Failed to submit job for $sample_py_list."
             fi
         else
-            # Submit the job locally
             if [[ "$job_type" == "Cellbender" ]]; then
                 $submit_job "$sample_py_list" "$expected_cells" "$total_droplets_included" "$use_cluster"
             elif [[ "$job_type" == "SBcount" ]]; then
@@ -187,7 +192,6 @@ submit_batch_jobs() {
         fi
     done
 
-    # Monitor jobs only if clustering is used
     if [[ "$use_cluster" == true ]]; then
         for job_id in "${current_jobs[@]}"; do
             monitor_job "$job_id" 300
@@ -220,17 +224,14 @@ check_results() {
     local error_msg="$failure_message Please check logs in $(basename $log_folder)"
     if [ ${#unfinished_list[@]} -eq 0 ]; then
         echo -e "\n$success_message"
-        # send_email "${emj2}\nbcl: ${bcl}\nJob ID: \n${finished_list[@]}\n$success_message"
     else
         echo -e "\n$error_msg"
-        # send_email "${emj1}\nbcl: ${bcl}\nJob ID: \n${unfinished_list[@]}\n$error_msg"
         exit 1
     fi
 }
 
 
 ### MKFASTQ JOBS FUNCTIONS
-# generate the list of mkfastq index for cellranger mkfastq
 make_mkfastq_input_list() {
     local base_fastq_path="$1"
     local log_folder="$2"
@@ -254,14 +255,7 @@ make_mkfastq_input_list() {
                 target_path="${base_fastq_path}/${sample}"
             fi
 
-            # clear all outputs if re-run
             if [[ "$re_run" == true ]]; then
-                # rm -rf "${base_fastq_path}/${sample}" 2>/dev/null
-                # if [[ $? -ne 0 ]]; then
-                #     echo "Failed to delete ${base_fastq_path}/${sample}." >&2
-                #     echo "Failed to re-run mkfastq due to permission issue" >&2
-                #     exit 0
-                # fi
                 if ! rm -rf "${base_fastq_path}/${sample}" 2>/dev/null; then
                     echo -e "\nFailed to re-run mkfastq due to permission issue. \nCannot delete ${base_fastq_path}/${sample}" >&2
                     exit 1 
@@ -269,7 +263,6 @@ make_mkfastq_input_list() {
                 sleep 10
             fi
 
-            # make sure all fastqs in mkfastq folder are moved to the correct index folder
             if [ -d "$target_path" ]; then
                 local fastq_folder=$(find "$target_path" -maxdepth 1 -type d | grep -vE "(Reports|Stats)" | head -3 | tail -1)
                 if [ ! -z "$(ls -A "$fastq_folder")" ]; then
@@ -281,7 +274,6 @@ make_mkfastq_input_list() {
                 fi
             fi
 
-            # check if fastqs exist for the all samples
             index_column=($(IFS=$'\n' awk -F',' '{print $NF}' "$file"))
             index_column=("${index_column[@]:1}")
 
@@ -290,12 +282,6 @@ make_mkfastq_input_list() {
                 pattern="${base_fastq_path}/${idx}/${idx}_*_L00${number_part}_*.fastq.gz"
                 
                 if [[ "$re_run" == true ]]; then
-                    # rm -rf "${base_fastq_path}/${idx}" 2>/dev/null
-                    # if [[ $? -ne 0 ]]; then
-                    #     echo "Failed to delete ${base_fastq_path}/${idx}." >&2
-                    #     echo "Failed to re-run mkfastq due to permission issue" >&2
-                    #     exit 0
-                    # fi
                     if ! rm -rf "${base_fastq_path}/${idx}" 2>/dev/null; then
                         echo -e "\nFailed to re-run mkfastq due to permission issue. \nCannot delete ${base_fastq_path}/${idx}" >&2
                         exit 1 
@@ -316,7 +302,6 @@ make_mkfastq_input_list() {
 }
 
 
-# submit cellranger mkfastq job to the cluster or local computer
 submit_mkfastq_job() {
     local sample_py_list=$1
     local use_cluster=${2:-false}
@@ -326,7 +311,7 @@ submit_mkfastq_job() {
 
     local cluster_cmd=""
     if [[ "$use_cluster" == true ]]; then
-        cluster_cmd="--cluster \"qsub -N $mf_id -r yes -l h_vmem=16G -l h_rt=15:00:00 -binding linear:8 -pe smp 8 -o $main_log -e $main_err\""
+        cluster_cmd="--cluster \"sbatch -J $mf_id --requeue --mem=16G --time=15:00:00 --cpus-per-task=8 -p eddy -o $main_log -e $main_err --parsable\""
     fi
 
     local snakemake_command="snakemake -s \"$base_smk_path/mkfastq_split.smk\" \
@@ -343,11 +328,11 @@ submit_mkfastq_job() {
     [ -f "$main_err" ] && rm -rf "$main_err"
     eval $snakemake_command
 
-    chomod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
+    chmod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
 
     if [[ "$use_cluster" == true ]]; then
         sleep 60
-        local mf_job_id=$(qstat | awk -v mf_id="$mf_id" '$3 ~ mf_id {print $1}')
+        local mf_job_id=$(squeue --name="$mf_id" -h -o "%i" 2>/dev/null | head -1)
         if [ -n "$mf_job_id" ]; then
             echo "$mf_job_id"
         else
@@ -358,9 +343,7 @@ submit_mkfastq_job() {
 }
 
 
-
 ### RNAcounts JOBS FUNCTIONS
-# generate the list of RNAcounts index for cellranger count
 make_RNAcount_input_list() {
     local base_count_path="$1"
     local log_folder="$2"
@@ -381,12 +364,6 @@ make_RNAcount_input_list() {
             local target_folder="${base_count_path}/${sample}/outs"
 
             if [[ "$re_run" == true ]]; then
-                # rm -rf "${base_count_path}/${sample}" 2>/dev/null
-                # if [[ $? -ne 0 ]]; then
-                #     echo "Failed to delete ${base_count_path}/${sample}." >&2
-                #     echo "Failed to re-run RNAcounts due to permission issue" >&2
-                #     exit 0
-                # fi
                 if ! rm -rf "${base_count_path}/${sample}" 2>/dev/null; then
                     echo "Failed to re-run RNACounts due to permission issue. \nCannot delete ${base_count_path}/${sample}" >&2
                     exit 1 
@@ -403,7 +380,6 @@ make_RNAcount_input_list() {
     echo "${unique_sample_list[@]}"
 }
 
-# submit cellranger count job to the cluster or local computer
 submit_RNAcounts_job() {
     local sample_py_list=$1
     local use_cluster=${2:-false}
@@ -413,7 +389,7 @@ submit_RNAcounts_job() {
 
     local cluster_cmd=""
     if [[ "$use_cluster" == true ]]; then
-        cluster_cmd="--cluster \"qsub -N $cr_id -r yes -l h_vmem=16G -l h_rt=30:00:00 -binding linear:8 -pe smp 8 -o $main_log -e $main_err\""
+        cluster_cmd="--cluster \"sbatch -J $cr_id --requeue --mem=16G --time=30:00:00 --cpus-per-task=8 -p eddy -o $main_log -e $main_err --parsable\""
     fi
 
     local snakemake_command="snakemake -s \"$base_smk_path/RNAcounts_split.smk\" \
@@ -433,11 +409,11 @@ submit_RNAcounts_job() {
     [ -f "$main_err" ] && rm -rf "$main_err"
     eval $snakemake_command
 
-    chomod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
+    chmod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
 
     if [[ "$use_cluster" == true ]]; then
-        sleep 30 
-        local cr_job_id=$(qstat | awk -v cr_id="$cr_id" '$3 ~ cr_id {print $1}')
+        sleep 30
+        local cr_job_id=$(squeue --name="$cr_id" -h -o "%i" 2>/dev/null | head -1)
         if [ -n "$cr_job_id" ]; then
             echo "$cr_job_id"
         else
@@ -448,9 +424,7 @@ submit_RNAcounts_job() {
 }
 
 
-
 ### CELLBENDER JOBS FUNCTIONS
-# generate the list of cellbender index for cellbender count
 make_cellbener_input_list() {
     local base_count_path="$1"
     local log_folder="$2"
@@ -470,16 +444,9 @@ make_cellbener_input_list() {
             sample=${sample%.*}  
             target_file="${base_count_path}/${sample}/cellbender_outs/cellbender_output_filtered.h5"
             
-            # clear all outputs if re-run
             if [[ "$re_run" == true ]]; then
-                # rm -rf "${base_count_path}/${sample}/cellbender_outs" 2>/dev/null
-                # if [[ $? -ne 0 ]]; then
-                #     echo "Failed to delete ${base_count_path}/${sample}/cellbender_outs." >&2
-                #     echo "Failed to re-run cellbender due to permission issue" >&2
-                #     exit 0
-                # fi
                 if ! rm -rf "${base_count_path}/${sample}/cellbender_outs" 2>/dev/null; then
-                    echo -e "\nFailed to re-run Cellbener due to permission issue. \nCannot delete ${base_count_path}/${sample}/cellbender_outs" >&2
+                    echo -e "\nFailed to re-run Cellbender due to permission issue. \nCannot delete ${base_count_path}/${sample}/cellbender_outs" >&2
                     exit 1 
                 fi
             fi
@@ -493,7 +460,6 @@ make_cellbener_input_list() {
     echo "${unique_sample_list[@]}"
 }
 
-# submit cellbender job to the cluster or local computer
 submit_Cellbender_job() {
     local sample_py_list=$1
     local expected_cells=${2:-none}      
@@ -506,7 +472,7 @@ submit_Cellbender_job() {
 
     local cluster_cmd=""
     if [[ "$use_cluster" == true ]]; then
-        cluster_cmd="--cluster \"qsub -N $cb_id -r yes -l h_vmem=16G -l h_rt=32:00:00 -binding linear:8 -pe smp 10 -o $main_log -e $main_err\""
+        cluster_cmd="--cluster \"sbatch -J $cb_id --requeue --mem=16G --time=32:00:00 --cpus-per-task=10 -p eddy -o $main_log -e $main_err --parsable\""
     fi
 
     local snakemake_command="snakemake -s \"$base_smk_path/Cellbender_split.smk\" \
@@ -526,11 +492,11 @@ submit_Cellbender_job() {
     [ -f "$main_err" ] && rm -rf "$main_err"
     eval $snakemake_command
 
-    chomod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
+    chmod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
 
     if [[ "$use_cluster" == true ]]; then
-        sleep 60 
-        local cb_job_id=$(qstat | awk -v cb_id="$cb_id" '$3 ~ cb_id {print $1}')
+        sleep 60
+        local cb_job_id=$(squeue --name="$cb_id" -h -o "%i" 2>/dev/null | head -1)
         if [ -n "$cb_job_id" ]; then
             echo "$cb_job_id"
         else
@@ -541,8 +507,7 @@ submit_Cellbender_job() {
 }
 
 
-# SBcounts JOBS FUNCTIONS
-# generate the list of SBcounts index for SBcounts
+### SBCOUNTS JOBS FUNCTIONS
 make_SBcount_input_list() {
     local base_spatial_path="$1"
     local log_folder="$2"
@@ -566,15 +531,7 @@ make_SBcount_input_list() {
             target_file="${base_spatial_path}/${sample}/SBcounts/SBcounts.h5"
             puck_file="${base_spatial_path}/${sample}/puck/*.csv"
 
-            # clear all outputs if re-run
             if [[ "$re_run" == true ]]; then
-                # rm -rf "$target_file" 2>/dev/null
-                # rm -rf "$puck_file" 2>/dev/null
-                # if [[ $? -ne 0 ]]; then
-                #     echo "Failed to delete $target_file." >&2
-                #     echo "Failed to re-run SBcounts due to permission issue" >&2
-                #     exit 0
-                # fi
                 if ! rm -rf "$target_file" "$puck_file" 2>/dev/null; then
                     echo -e "\nFailed to re-run SBcounts due to permission issue. \nCannot delete $target_file" >&2
                     exit 1 
@@ -592,7 +549,6 @@ make_SBcount_input_list() {
     echo "${match_rna_list[*]}"
 }
 
-# submit SBcounts job to the cluster or local computer
 submit_SBcount_job() {
     local sample_py_list=$1
     local match_rna_list=$2
@@ -604,7 +560,7 @@ submit_SBcount_job() {
 
     local cluster_cmd=""
     if [[ "$use_cluster" == true ]]; then
-        cluster_cmd="--cluster \"qsub -N $sb_id -r yes -l h_vmem=16G -l h_rt=5:00:00 -binding linear:8 -pe smp 8 -o $main_log -e $main_err\""
+        cluster_cmd="--cluster \"sbatch -J $sb_id --requeue --mem=16G --time=5:00:00 --cpus-per-task=8 -p eddy -o $main_log -e $main_err --parsable\""
     fi
 
     local snakemake_command="snakemake -s \"$base_smk_path/SBcounts_split.smk\" \
@@ -629,11 +585,11 @@ submit_SBcount_job() {
     [ -f "$main_err" ] && rm -rf "$main_err"
     eval $snakemake_command
 
-    chomod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
+    chmod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
 
     if [[ "$use_cluster" == true ]]; then
-        sleep 60 
-        local sb_job_id=$(qstat | awk -v sb_id="$sb_id" '$3 ~ sb_id {print $1}')
+        sleep 60
+        local sb_job_id=$(squeue --name="$sb_id" -h -o "%i" 2>/dev/null | head -1)
         if [ -n "$sb_job_id" ]; then
             echo "$sb_job_id"
         else
@@ -644,9 +600,7 @@ submit_SBcount_job() {
 }
 
 
-
-# SPATIAL JOBS FUNCTIONS
-# generate the list of Spatial analysis index for Spatial analysis
+### SPATIAL JOBS FUNCTIONS
 make_analysis_input_list() {
     local base_spatial_path="$1"
     local log_folder="$2"
@@ -666,14 +620,7 @@ make_analysis_input_list() {
             sb_index=${sb_index%.*} 
             match_tb="$base_sheet_folder/name_to_index.csv"
             sample=$(awk -F, -v sb_idx="$sb_index" '$4 == sb_idx {print $2}' $match_tb)
-            # clear all outputs if re-run
             if [[ "$re_run" == true ]]; then
-                # rm -rf "${base_spatial_path}/${sample}/Positions" 2>/dev/null
-                # if [[ $? -ne 0 ]]; then
-                #     echo "Failed to delete ${base_spatial_path}/${sample}/Positions." >&2
-                #     echo "Failed to re-run Spatial analysis due to permission issue" >&2
-                #     exit 0
-                # fi
                 if ! rm -rf "${base_spatial_path}/${sample}/Positions" 2>/dev/null; then
                     echo -e "\nFailed to re-run Spatial analysis due to permission issue. \nCannot delete ${base_spatial_path}/${sample}/Positions" >&2
                     exit 1 
@@ -689,7 +636,6 @@ make_analysis_input_list() {
     echo "${unique_index_list[@]}"
 }
 
-# submit Spatial analysis job to the cluster or local computer
 submit_Spatial_job() {
     local match_rna_list=$1
     local use_cluster=${2:-false}
@@ -700,7 +646,7 @@ submit_Spatial_job() {
 
     local cluster_cmd=""
     if [[ "$use_cluster" == true ]]; then
-        cluster_cmd="--cluster \"qsub -N $sp_id -r yes -l h_vmem=12G -l h_rt=5:00:00 -binding linear:8 -pe smp 8 -o $main_log -e $main_err\""
+        cluster_cmd="--cluster \"sbatch -J $sp_id --requeue --mem=12G --time=5:00:00 --cpus-per-task=8 -p eddy -o $main_log -e $main_err --parsable\""
     fi
     
     local snakemake_command="snakemake -s \"$base_smk_path/Spatial_split.smk\" \
@@ -723,11 +669,11 @@ submit_Spatial_job() {
     [ -f "$main_err" ] && rm -rf "$main_err"
     eval $snakemake_command
 
-    chomod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
+    chmod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
 
     if [[ "$use_cluster" == true ]]; then
-        sleep 60 
-        local sp_job_id=$(qstat | awk -v sp_id="$sp_id" '$3 ~ sp_id {print $1}')
+        sleep 60
+        local sp_job_id=$(squeue --name="$sp_id" -h -o "%i" 2>/dev/null | head -1)
         if [ -n "$sp_job_id" ]; then
             echo "$sp_job_id"
         else
@@ -748,7 +694,7 @@ submit_move_data_job() {
 
     local cluster_cmd=""
     if [[ "$use_cluster" == true ]]; then
-        cluster_cmd="--cluster \"qsub -N move_data -l h_vmem=32G -l h_rt=00:20:00 -pe smp 1 -o $main_log -e $main_err\""
+        cluster_cmd="--cluster \"sbatch -J move_data --mem=32G --time=00:20:00 --cpus-per-task=1 -p eddy -o $main_log -e $main_err --parsable\""
     fi
     local snakemake_command="snakemake -s \"$base_smk_path/move_data.smk\" \
         --directory \"$log_folder\" \
@@ -763,7 +709,7 @@ submit_move_data_job() {
     [ -f "$main_log" ] && rm -rf "$main_log"
     eval $snakemake_command
 
-    chomod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
+    chmod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
     sleep 30
 }
 
@@ -778,7 +724,6 @@ upload_fastq() {
     local use_cluster="$6"
 
     echo -e "\n------------------------ Uploading FASTQ to Google Cloud Bucket ------------------------"
-
     mkdir -p "$base_log_path/upload"
 
     if [ "$use_cluster" = "true" ]; then
@@ -787,8 +732,9 @@ upload_fastq() {
         [ -f "$upload_log" ] && rm -rf "$upload_log"
         [ -f "$upload_err" ] && rm -rf "$upload_err"
         
-        job_id=$(qsub -N "upload" -r yes -l h_vmem=64G -l h_rt=1:00:00 -pe smp 2 -binding linear:2 -o "$upload_log" -e "$upload_err" \
-        "$base_src_path/upload_fastq.sh" "$bcl" "$base_fastq_path" "$base_log_path" "$pkg_path" "$bucket_name" | awk '{print $3}')
+        job_id=$(sbatch -J "upload" --requeue --mem=64G --time=1:00:00 --cpus-per-task=2 -p eddy \
+            -o "$upload_log" -e "$upload_err" --parsable \
+            "$base_src_path/upload_fastq.sh" "$bcl" "$base_fastq_path" "$base_log_path" "$pkg_path" "$bucket_name")
         echo "Submitted job with ID: $job_id"
         echo "Waiting for uploading to complete..."
         monitor_job "$job_id" 60
@@ -812,7 +758,6 @@ upload_bam() {
     local use_cluster="$6"
 
     echo -e "\n------------------------ Uploading BAM to Google Cloud Bucket ------------------------"
-
     mkdir -p "$base_log_path/upload"
 
     if [ "$use_cluster" = "true" ]; then
@@ -821,8 +766,9 @@ upload_bam() {
         [ -f "$upload_log" ] && rm -rf "$upload_log"
         [ -f "$upload_err" ] && rm -rf "$upload_err"
         
-        job_id=$(qsub -N "upload" -r yes -l h_vmem=64G -l h_rt=1:00:00 -pe smp 2 -binding linear:2 -o "$upload_log" -e "$upload_err" \
-        "$base_src_path/Data2Bucket/upload_bam.sh" "$bcl" "$base_count_path" "$base_log_path" "$pkg_path" "$bucket_name" | awk '{print $3}')
+        job_id=$(sbatch -J "upload" --requeue --mem=64G --time=1:00:00 --cpus-per-task=2 -p eddy \
+            -o "$upload_log" -e "$upload_err" --parsable \
+            "$base_src_path/Data2Bucket/upload_bam.sh" "$bcl" "$base_count_path" "$base_log_path" "$pkg_path" "$bucket_name")
         echo "Submitted job with ID: $job_id"
         echo "Waiting for uploading to complete..."
         monitor_job "$job_id" 60
@@ -857,8 +803,9 @@ download_files() {
         [ -f "$download_log" ] && rm -rf "$download_log"
         [ -f "$download_err" ] && rm -rf "$download_err"
         
-        job_id=$(qsub -N "download" -r yes -l h_vmem=64G -l h_rt=0:30:00 -pe smp 2 -binding linear:2 -o "$download_log" -e "$download_err" \
-        "$base_src_path/Data2Bucket/download_files.sh" "$bcl" "$base_fastq_path" "$base_count_path" "$index_name" "$pkg_path" "$bucket_name" "$index_fastq" | awk '{print $3}')
+        job_id=$(sbatch -J "download" --requeue --mem=64G --time=0:30:00 --cpus-per-task=2 -p eddy \
+            -o "$download_log" -e "$download_err" --parsable \
+            "$base_src_path/Data2Bucket/download_files.sh" "$bcl" "$base_fastq_path" "$base_count_path" "$index_name" "$pkg_path" "$bucket_name" "$index_fastq")
         echo "Submitted job with ID: $job_id"
         echo "Waiting for downloading to complete..."
         monitor_job "$job_id" 60

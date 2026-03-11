@@ -43,13 +43,13 @@ def get_resources(sample):
     elif 10 < folder_size < 20:
         time_count = 6*60*60
         time_vdj = 3*60*60
-    elif 30 > folder_size > 40:
+    elif 20 < folder_size < 30:
         time_count = 7*60*60
         time_vdj = 4*60*60
-    elif 50 > folder_size > 40:
+    elif 30 < folder_size < 40:
         time_count = 8*60*60
         time_vdj = 5*60*60
-    elif 70 > folder_size > 60:
+    elif 40 < folder_size < 60:
         time_count = 9*60*60
         time_vdj = 6*60*60
     else:
@@ -106,7 +106,6 @@ rule RNAcounts:
         """
         (
         set -euo pipefail
-        ulimit -v unlimited -d unlimited
         umask 000
 
         export PATH="{params.pkg_path}/cellranger-arc-2.0.2/bin:$PATH"

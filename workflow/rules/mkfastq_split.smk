@@ -61,7 +61,6 @@ rule mkfastq:
         """
         set -euo pipefail
         umask 000
-        ulimit -v unlimited -d unlimited
         export PATH="{params.pkg_path}/bcl2fastq2_v2.20.0/bin:$PATH"
         
         job_type=$(basename {input.Indexes} | cut -d '.' -f 1)
@@ -71,7 +70,7 @@ rule mkfastq:
         if [[ "$job_type" == "ATAC_lane"* ]]; then
             lane="${{lane_num}}_atac" 
         elif [[ "$job_type" == "ATAC_Index_lane"* ]]; then
-            lane="${{lanlane_nume}}_arc"
+            lane="${{lane_num}}_arc"
         else
             lane="${{lane_num}}"
         fi

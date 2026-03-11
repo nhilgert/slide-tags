@@ -93,10 +93,9 @@ rule spatial:
         """
         (
         set -euo pipefail
-        ulimit -v unlimited -d unlimited
         umask 000
         
-        export PATH="${params.conda_path}:$PATH"
+        export PATH="{params.conda_path}:$PATH"
         export PATH="{params.env_path}:$PATH"
         export PATH="{params.env_path}/bin:$PATH"
         export PATH="{params.env_path}/bin/R:$PATH"
