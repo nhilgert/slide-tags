@@ -1,0 +1,41 @@
+read_check:
+  mem_gb: 128
+  disk_mb: 8192
+  runtime_min: 120
+  threads: 10
+
+move_data:
+  mem_gb: 128
+  disk_mb: 8192
+  runtime_min: 240
+  threads: 68
+
+mkfastqt:
+  mem_gb: 512
+  disk_mb: 32768
+  runtime_min: 960   # 16 hours
+  threads: 68
+
+RNAcounts:
+  mem_gb: 512
+  disk_mb: 32768
+  runtime_min: 1440  # 24 hours
+  threads: 68
+
+Cellbender:
+  mem_gb: 512
+  disk_mb: 32768
+  runtime_min: 1920  # 32 hours
+  threads: 68
+
+SBcounts:
+  mem_gb: 512
+  disk_mb: 8192
+  runtime_min: 120   # 2 hours
+  threads: 32
+
+Spatial:
+  mem_gb: 512
+  disk_mb: 8192
+  runtime_min: 240   # 4 hours (Seurat PCA + DBSCAN grid search can be slow)
+  threads: 32
