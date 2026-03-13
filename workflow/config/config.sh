@@ -1,69 +1,77 @@
-# config.sh
+# config.sh — User-configurable paths for the Slide-tags pipeline
+#
+# This file is sourced by slidetag_pipe.sh. Edit the paths below to match
+# your environment. See FASRC_SETUP.md for detailed setup instructions.
 
-# This file contains the configuration for Slide-tag pipeline.
-# It should be sourced in the `slidetag_pipe.sh` script.
+# ---------------------------------------------------------------------------
+# Cluster and conda
+# ---------------------------------------------------------------------------
 
-# # The following variables are defined:
-# `CLUSTER_PATH`
-#     path to the cluster bin; currently using UGE 8.5.5; set blank if running locally.
-# `CONDA_PATH`
-#     path to the conda bin.
-# `ENV_PATH`
-#     path to the main conda environment for python, julia, and R.
-# `PKG_PATH`
-#     path to the package folder for the pipeline, including:
-#         bcl2fastq2_v2.20.0
-#         CellBender-0.2.2
-#         CellBender-0.3.0
-#         cellranger-7.2.0
-#         cellranger-8.0.1
-#         cellranger-arc-2.0.2
-#         cellranger-atac-2.1.0
-#         google-cloud-sdk
-# `BASE_DATA_PATH`
-#     path to the store processed data, including outputs of `mkfastq`, `RNAcounts` etc.
-# `BCL_MAIN_PATH`
-#     path to the bcl files; use it as default main path for input BCLs in google sheet.
-# `WORKFLOW_PATH`
-#     path to the `workflow` folder for the pipeline, DO NOT contain `workflow` in the path.
-# `GOOGLE_SHEET_ID`
-#     the google sheet id for the sample metadata.
-# `GOOGLE_CLOUD_BUCKET`
-#     the google cloud bucket to store the fastq and bam files.
-# `PUCK_PATH`
-#     path to the puck coordiante csv files .
-# `PUCK_IN`
-#     path to the slide-seq puck barcode files.
-# `REF_PATH`
-#     path to the reference data, including:
-#         refdata-arc-GRCh38-2020-A      
-#         refdata-gex-GRCh38-2024-A
-#         refdata-arc-mm10-2020-A    
-#         refdata-gex-GRCm39-2024-A
-#         refdata-gex-mm10-2020-A
-#         refdata-cellranger-vdj-GRCh38
-#         refdata-cellranger-vdj-GRCm38
-#         custom_refdata                (store custom reference data)
-#         Index_Info                    (store the index information from cellranger)
-#         probesets                     (store the custom probesets information)
-
+# Path to cluster scheduler bin (leave blank for SLURM — auto-detected)
 export CLUSTER_PATH=""
+
+# Path to conda bin directory (system conda on FASRC)
 export CONDA_PATH="/n/sw/Miniforge3-25.3.1-0/bin"
+
+# Path to the slidetags conda environment
+# Find yours with: conda env list | grep slidetags
 export ENV_PATH="/n/home12/nhilgert/.conda/envs/slidetags"
-export PKG_PATH="/n/eddy_lab/users/nhilgert/software"
-export BASE_DATA_PATH="/n/eddy_lab/users/nhilgert/Slide-tags/data"
-export BCL_MAIN_PATH=""
+
+# ---------------------------------------------------------------------------
+# Pipeline paths
+# ---------------------------------------------------------------------------
+
+# Root of the Slide-tags repo (no trailing slash, no "workflow" suffix)
 export WORKFLOW_PATH="/n/eddy_lab/users/nhilgert/Slide-tags"
-export GOOGLE_SHEET_ID=""
-export GOOGLE_CLOUD_BUCKET=""
+
+# Where pipeline data lives. Each sample creates a subdirectory here:
+#   <BASE_DATA_PATH>/<SAMPLE>/fastq/, RNAcounts/, spatial/, log/
+export BASE_DATA_PATH="/n/eddy_lab/users/nhilgert/Slide-tags/data"
+
+# Directory containing puck coordinate CSVs (filename = puck_id + .csv)
+# Format: 3 columns, no header — barcode, x_um, y_um
 export PUCK_PATH="/n/eddy_lab/users/nhilgert/Slide-tags/pucks"
-export PUCK_IN=""
+
+# ---------------------------------------------------------------------------
+# External software and references
+# ---------------------------------------------------------------------------
+
+# Parent directory containing cellranger-7.2.0/, cellranger-8.0.1/, etc.
+# The pipeline appends the cellranger version directory automatically.
+export PKG_PATH="/n/eddy_lab/users/nhilgert/software"
+
+# Directory containing cellranger reference genomes:
+#   refdata-gex-mm10-2020-A, refdata-gex-GRCh38-2024-A, etc.
+# Species-to-reference mapping is in scripts/SubmitFuncs/make_input_csv.py
 export REF_PATH="/n/eddy_lab/users/nhilgert/reference"
+
+# ---------------------------------------------------------------------------
+# Google Cloud / Sheets (optional — leave blank if using -csv mode)
+# ---------------------------------------------------------------------------
+
+# Path to BCL files (used as default input path for Google Sheets mode)
+export BCL_MAIN_PATH=""
+
+# Google Sheet ID for sample metadata (leave blank for -csv mode)
+export GOOGLE_SHEET_ID=""
+
+# Google Cloud Storage bucket for FASTQ/BAM upload (leave blank to skip)
+export GOOGLE_CLOUD_BUCKET=""
+
+# Path to slide-seq puck barcode file (leave blank if not used)
+export PUCK_IN=""
+
+# ---------------------------------------------------------------------------
+# PATH setup (do not edit unless you know what you're doing)
+# ---------------------------------------------------------------------------
 export PATH="$CLUSTER_PATH:$PATH"
 export PATH="$CONDA_PATH:$PATH"
 
-# The following chunk_size defines the number of samples to run locally every time.
-# The default value is 1, which means run one sample at a time.
+# ---------------------------------------------------------------------------
+# Parallelism — number of samples to process per SLURM job
+# ---------------------------------------------------------------------------
+# Increase these to submit fewer, larger SLURM jobs.
+# Decrease to 1 for debugging (one job per sample).
 export CHUNK_SIZE_MKFASTQ=1
 export CHUNK_SIZE_RNACOUNTS=1
 export CHUNK_SIZE_CELLBENDER=1
