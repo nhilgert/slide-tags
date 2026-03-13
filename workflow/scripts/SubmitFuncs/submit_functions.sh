@@ -102,7 +102,7 @@ submit_read_sheet_job() {
 
     local snakemake_command="snakemake -s \"$base_smk_path/read_check.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\" \ \
+        --config base_path=\"$BASE_DATA_PATH\" \
         src_path=\"$base_src_path\" \
         py_path=\"$python_path\" \
         bcl=\"$bcl\" bcl_path=\"$BCL_MAIN_PATH\" \
@@ -394,7 +394,7 @@ submit_RNAcounts_job() {
 
     local snakemake_command="snakemake -s \"$base_smk_path/RNAcounts_split.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\" \ \
+        --config base_path=\"$BASE_DATA_PATH\" \
         pkg_path=\"$PKG_PATH\" \
         ref_path=\"$REF_PATH\" \
         src_path=\"$base_src_path\" \
@@ -477,7 +477,7 @@ submit_Cellbender_job() {
 
     local snakemake_command="snakemake -s \"$base_smk_path/Cellbender_split.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\" \ \
+        --config base_path=\"$BASE_DATA_PATH\" \
         env_path=\"$ENV_PATH\" \
         bcl=\"$bcl\" run_folder=\"$log_folder\" \
         sample=\"$sample_py_list\" \
@@ -644,14 +644,9 @@ submit_Spatial_job() {
     local main_err="$log_folder/main/spatial.err"
     local main_log="$log_folder/main/spatial.log"
 
-    local cluster_cmd=""
-    if [[ "$use_cluster" == true ]]; then
-        cluster_cmd="--cluster \"sbatch -J $sp_id --requeue --mem=12G --time=5:00:00 --cpus-per-task=8 -p eddy -o $main_log -e $main_err --parsable\""
-    fi
-    
     local snakemake_command="snakemake -s \"$base_smk_path/Spatial_split.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\" \ \
+        --config base_path=\"$BASE_DATA_PATH\" \
         conda_path=\"$CONDA_PATH\" \
         env_path=\"$ENV_PATH\" \
         ref_path=\"$REF_PATH\" \
@@ -659,28 +654,30 @@ submit_Spatial_job() {
         bcl=\"$bcl\" \
         rna_list=\"$match_rna_list\" \
         run_folder=\"$log_folder\" \
-        --cores all -j \"$chunk_size\" \
-        --immediate-submit --notemp --keep-going \
+        --cores 8 --notemp --keep-going \
         --latency-wait 60 --forcerun \
-        --quiet --nolock \
-        --configfile \"$smk_config\" \
-        $cluster_cmd"
+        --nolock \
+        --configfile \"$smk_config\""
     [ -f "$main_log" ] && rm -rf "$main_log"
     [ -f "$main_err" ] && rm -rf "$main_err"
-    eval $snakemake_command
-
-    chmod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
 
     if [[ "$use_cluster" == true ]]; then
-        sleep 60
-        local sp_job_id=$(squeue --name="$sp_id" -h -o "%i" 2>/dev/null | head -1)
+        # Submit snakemake as a single SLURM job (runs rules locally on compute node)
+        local sp_job_id=$(sbatch -J "$sp_id" --requeue --mem=64G --time=5:00:00 \
+            --cpus-per-task=8 -p eddy \
+            -o "$main_log" -e "$main_err" \
+            --parsable --wrap "$snakemake_command" 2>/dev/null)
         if [ -n "$sp_job_id" ]; then
             echo "$sp_job_id"
         else
             echo -e "Failed to submit Spatial analysis for $match_rna_list.\n" >&2
             return 1
         fi
+    else
+        eval $snakemake_command
     fi
+
+    chmod -R 777 "$log_folder/.snakemake" >/dev/null 2>&1
 }
 
 
@@ -698,7 +695,7 @@ submit_move_data_job() {
     fi
     local snakemake_command="snakemake -s \"$base_smk_path/move_data.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\" \ \
+        --config base_path=\"$BASE_DATA_PATH\" \
         bcl=\"$bcl\" \
         run_folder=\"$log_folder\" \
         --cores all --quiet -j 3 --notemp --keep-going \

@@ -19,6 +19,7 @@ suppressMessages(library(furrr))
 suppressMessages(library(future))
 suppressMessages(library(parallel))
 options(warn = -1)
+options(future.globals.maxSize = 2 * 1024 * 1024 * 1024)  # 2 GiB
 
 
 # Get the path to the R function
@@ -81,27 +82,35 @@ data.list %<>% lapply(function(df){
 dbscan_coords <- create_dbscan_coords(data.list)
 invisible(gc())
 
-plot <- plot_dbscan(dbscan_coords, optim_plot)
-suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path, "DBSCAN.pdf"), 7, 8)))
+tryCatch({
+  plot <- plot_dbscan(dbscan_coords, optim_plot)
+  suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path, "DBSCAN.pdf"), 7, 8)))
+}, error = function(e) message("Warning: DBSCAN plot failed: ", conditionMessage(e)))
 
 
 ### Run KDE ####################################################################
 kde_coords <- map(data.list, ~kde(., bw, radius)) %>% bind_rows
 stopifnot(!is.na(kde_coords$d1), !is.na(kde_coords$d2))
 kde_coords %<>% mutate(ratio = d2/d1) %>% select(1:7, ratio, everything())
-plot <- plot_kde(kde_coords)
-suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path, "KDE.pdf"), 7, 8)))
+tryCatch({
+  plot <- plot_kde(kde_coords)
+  suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path, "KDE.pdf"), 7, 8)))
+}, error = function(e) message("Warning: KDE plot failed: ", conditionMessage(e)))
 
 
 ### More plots + save output ###################################################
 stopifnot(dbscan_coords$cb_index == kde_coords$cb_index)
 coords <- merge(dbscan_coords, kde_coords, by="cb_index", suffix=c("_dbscan","_kde"))
 coords %<>% rename(x2_um_kde=x2_um, y2_um_kde=y2_um)
-plot <- dbscan_vs_kde(coords)
-suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path, "DBSCANvsKDE.pdf"), 7, 8)))
+tryCatch({
+  plot <- dbscan_vs_kde(coords)
+  suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path, "DBSCANvsKDE.pdf"), 7, 8)))
+}, error = function(e) message("Warning: DBSCANvsKDE plot failed: ", conditionMessage(e)))
 
-plots <- sample_bead_plots(data.list, coords)
-suppressMessages(suppressWarnings(make.pdf(plots, file.path(out_path, "beadplots.pdf"), 7, 8)))
+tryCatch({
+  plots <- sample_bead_plots(data.list, coords)
+  suppressMessages(suppressWarnings(make.pdf(plots, file.path(out_path, "beadplots.pdf"), 7, 8)))
+}, error = function(e) message("Warning: beadplots failed: ", conditionMessage(e)))
 
 
 # set x_um, y_um to be the filtered DBSCAN placements where ratio<1/3

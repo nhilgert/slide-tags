@@ -174,6 +174,39 @@ ln -s /n/eddy_lab/users/nhilgert/decidualization/revisions/velocity/<sample>/cel
     data/<sample>/RNAcounts/<sample>
 ```
 Not all samples have cellranger output at this path — verify before symlinking.
+
+### 11. rlang 1.1.3 S4SXP bug — plotting calls wrapped in tryCatch
+The conda env has rlang 1.1.3 which has a known bug where `deparse(substitute())` fails
+with `'S4SXP': should not happen` when ggplot2's `+` operator encounters Seurat S4 objects.
+This crashes `plot_umaps()` and other plotting functions. All plotting calls in
+`run_positioning.R`, `positioning.R`, and `load_matrix.R` are wrapped in `tryCatch` so that
+plot failures are non-fatal warnings. DO NOT remove the tryCatch wrappers unless rlang is
+updated to >= 1.1.4. Symptom: spatial positioning log shows "Number of cells: N" then
+immediately "FAILURE" with no positioning output.
+
+### 12. Spatial SLURM memory must be 64G
+`submit_functions.sh` allocates `--mem=64G` for spatial positioning jobs. DO NOT reduce this.
+Samples with >13k cells require more than 12G. The largest sample (mck_11c, 44k cells) uses
+~40G peak memory during DBSCAN optimization.
+
+### 13. `future.globals.maxSize` in `positioning.R`
+`positioning.R` sets `options(future.globals.maxSize = 2 * 1024 * 1024 * 1024)` (2 GiB).
+This is needed because the default 500 MiB limit is exceeded by large samples (>30k cells)
+during parallel DBSCAN parameter search. The option is set in `positioning.R` (the child
+process), not `run_spatial.R` (the parent), because `system()` spawns a new R process that
+does not inherit R options. DO NOT move this option to run_spatial.R only.
+
+### 14. Corrupt SBcounts.h5 — check with `h5ls`
+If spatial positioning fails with `Error: Required files are missing: SBcounts.h5` but the
+file exists, the HDF5 is likely corrupt from an interrupted Julia write. Verify with:
+```bash
+h5ls data/<sample>/spatial/<index>/SBcounts/SBcounts.h5
+```
+A valid file shows `lists`, `matrix`, `metadata`, `puck` groups. If empty or errors, the
+SBcounts stage must be rerun: delete the corrupt .h5 and resubmit with `-sb`.
+Also check the SBcounts log — if it ends at "Saving results..." without "SUCCESS", the
+Julia process was killed mid-write (likely OOM or walltime).
+
 ## FASTQ Source Layout
 FASTQs are symlinked from lanes into the pipeline's data directory via setup_fastq_dirs.sh.
 Source structure:

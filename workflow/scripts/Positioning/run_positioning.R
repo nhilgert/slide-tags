@@ -46,11 +46,15 @@ if (file.exists(molecule_info_path)) { obj %<>% load_intronic(molecule_info_path
 Misc(obj, "RNA_metadata") = plot_metrics_summary(summary_path)
 
 ### Plots ###############################################################
-plot <- UvsI(obj, molecule_info_path)
-suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path,"RNA.pdf"), 7, 8)))
+tryCatch({
+  plot <- UvsI(obj, molecule_info_path)
+  suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path,"RNA.pdf"), 7, 8)))
+}, error = function(e) message("Warning: RNA plot failed: ", conditionMessage(e)))
 
-plot <- plot_umaps(obj)
-suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path,"UMAP.pdf"), 7, 8)))
+tryCatch({
+  plot <- plot_umaps(obj)
+  suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path,"UMAP.pdf"), 7, 8)))
+}, error = function(e) message("Warning: UMAP plot failed: ", conditionMessage(e)))
 
 ### Load the Spatial ###########################################################
 # Load the spatial barcode counts matrix and fuzzy match to our called-cells whitelist
@@ -92,29 +96,41 @@ obj[["spatial"]] <- CreateDimReducObject(embeddings = as.matrix(emb), key = "s_"
 qsave(obj, file.path(out_path,"seurat.qs"))
 
 # Plots DBSCAN
-plot <- plot_clusters(obj, reduction="dbscan")
-suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path,"DimPlotDBSCAN.pdf"), 7, 8)))
+tryCatch({
+  plot <- plot_clusters(obj, reduction="dbscan")
+  suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path,"DimPlotDBSCAN.pdf"), 7, 8)))
+}, error = function(e) message("Warning: DBSCAN plot failed: ", conditionMessage(e)))
 
 # Plots KDE
-plot <- plot_clusters(obj, reduction="kde")
-suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path,"DimPlotKDE.pdf"), 7, 8)))
+tryCatch({
+  plot <- plot_clusters(obj, reduction="kde")
+  suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path,"DimPlotKDE.pdf"), 7, 8)))
+}, error = function(e) message("Warning: KDE plot failed: ", conditionMessage(e)))
 
 # Plots DimPlot
-plot <- plot_clusters(obj, reduction="spatial")
-suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path,"DimPlot.pdf"), 7, 8)))
+tryCatch({
+  plot <- plot_clusters(obj, reduction="spatial")
+  suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path,"DimPlot.pdf"), 7, 8)))
+}, error = function(e) message("Warning: DimPlot failed: ", conditionMessage(e)))
 
 # Plots RNA vs SB
-plot <- plot_RNAvsSB(obj)
-suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path, "RNAvsSB.pdf"), 7, 8)))
+tryCatch({
+  plot <- plot_RNAvsSB(obj)
+  suppressMessages(suppressWarnings(make.pdf(plot, file.path(out_path, "RNAvsSB.pdf"), 7, 8)))
+}, error = function(e) message("Warning: RNAvsSB plot failed: ", conditionMessage(e)))
 
 # Merge the PDF files
-plotlist <- c(c("SB.pdf","beadplot.pdf","SBmetrics.pdf"),
-              c("DBSCAN.pdf","KDE.pdf","DBSCANvsKDE.pdf","beadplots.pdf"),
-              c("RNAmetrics.pdf","RNA.pdf","UMAP.pdf","DimPlot.pdf","DimPlotDBSCAN.pdf","DimPlotKDE.pdf","RNAvsSB.pdf"))
-plotorder <- c(8, 9, 10, 1, 2, 4, 5, 6, 11, 12, 13, 14, 3, 7)
-suppressMessages({
-  pdfs <- file.path(out_path, plotlist[plotorder])
-  pdfs %<>% keep(file.exists)
-  qpdf::pdf_combine(input=pdfs, output=file.path(out_path,"summary.pdf"))
-  file.remove(pdfs)
-})
+tryCatch({
+  plotlist <- c(c("SB.pdf","beadplot.pdf","SBmetrics.pdf"),
+                c("DBSCAN.pdf","KDE.pdf","DBSCANvsKDE.pdf","beadplots.pdf"),
+                c("RNAmetrics.pdf","RNA.pdf","UMAP.pdf","DimPlot.pdf","DimPlotDBSCAN.pdf","DimPlotKDE.pdf","RNAvsSB.pdf"))
+  plotorder <- c(8, 9, 10, 1, 2, 4, 5, 6, 11, 12, 13, 14, 3, 7)
+  suppressMessages({
+    pdfs <- file.path(out_path, plotlist[plotorder])
+    pdfs %<>% keep(file.exists)
+    if (length(pdfs) > 0) {
+      qpdf::pdf_combine(input=pdfs, output=file.path(out_path,"summary.pdf"))
+      file.remove(pdfs)
+    }
+  })
+}, error = function(e) message("Warning: PDF merge failed: ", conditionMessage(e)))

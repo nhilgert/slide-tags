@@ -88,7 +88,9 @@ invisible(gc())
 
 # Plot raw spatial data
 message("Creating barcode rank plots")
-suppressMessages(suppressWarnings(plot_rankplots(df, f, out_path)))
+tryCatch({
+  suppressMessages(suppressWarnings(plot_rankplots(df, f, out_path)))
+}, error = function(e) message("Warning: rank plots failed: ", conditionMessage(e)))
 invisible(gc())
 
 # load the puck information
@@ -96,7 +98,9 @@ message("Loading the puck")
 puckdf <- load_puckdf(f)
 
 message("Making beadplot")
-suppressMessages(suppressWarnings(plot_beadplot(df, puckdf, out_path)))
+tryCatch({
+  suppressMessages(suppressWarnings(plot_beadplot(df, puckdf, out_path)))
+}, error = function(e) message("Warning: beadplot failed: ", conditionMessage(e)))
 
 # remove reads with a filtered spatial barcode
 message("Removing low-quality spatial barcodes")
@@ -125,7 +129,9 @@ metadata$puck_info$umi_final = map_int(1:len(metadata$puck_info$puck_name), ~fil
 
 # plot metadata
 message("Plotting metadata")
-plot_metrics(metadata, out_path)
+tryCatch({
+  plot_metrics(metadata, out_path)
+}, error = function(e) message("Warning: metrics plot failed: ", conditionMessage(e)))
 
 # write output
 message("Writing results")
