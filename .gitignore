@@ -1,0 +1,10 @@
+data/
+pucks/
+samples/
+*.ipynb
+.ipynb_checkpoints/
+claude_status.log
+additions.md
+CLAUDE_appendix.md
+main_env.yml
+decidualization_all.csv
