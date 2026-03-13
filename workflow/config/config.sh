@@ -35,30 +35,30 @@
 # `PUCK_IN`
 #     path to the slide-seq puck barcode files.
 # `REF_PATH`
-#     path to the reference data, including: 
+#     path to the reference data, including:
 #         refdata-arc-GRCh38-2020-A      
 #         refdata-gex-GRCh38-2024-A
 #         refdata-arc-mm10-2020-A    
 #         refdata-gex-GRCm39-2024-A
 #         refdata-gex-mm10-2020-A
-#         refdata-cellranger-vdj-GRCh38  
+#         refdata-cellranger-vdj-GRCh38
 #         refdata-cellranger-vdj-GRCm38
 #         custom_refdata                (store custom reference data)
 #         Index_Info                    (store the index information from cellranger)
 #         probesets                     (store the custom probesets information)
 
 export CLUSTER_PATH=""
-export CONDA_PATH=""
-export ENV_PATH=""
-export PKG_PATH=""
-export BASE_DATA_PATH=""
+export CONDA_PATH="/n/sw/Miniforge3-25.3.1-0/bin"
+export ENV_PATH="/n/home12/nhilgert/.conda/envs/slidetags"
+export PKG_PATH="/n/eddy_lab/users/nhilgert/software"
+export BASE_DATA_PATH="/n/eddy_lab/users/nhilgert/Slide-tags/data"
 export BCL_MAIN_PATH=""
-export WORKFLOW_PATH=""
+export WORKFLOW_PATH="/n/eddy_lab/users/nhilgert/Slide-tags"
 export GOOGLE_SHEET_ID=""
 export GOOGLE_CLOUD_BUCKET=""
-export PUCK_PATH=""
+export PUCK_PATH="/n/eddy_lab/users/nhilgert/Slide-tags/pucks"
 export PUCK_IN=""
-export REF_PATH=""
+export REF_PATH="/n/eddy_lab/users/nhilgert/reference"
 export PATH="$CLUSTER_PATH:$PATH"
 export PATH="$CONDA_PATH:$PATH"
 

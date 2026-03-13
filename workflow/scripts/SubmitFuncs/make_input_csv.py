@@ -175,9 +175,9 @@ def generate_files(rows, log_folder, data_path, bcl):
                 f.write(f"{sb_index}\n")
 
     # Write name_to_index.csv
-    with open(name_to_index_path, "w", newline="") as f:
+    with open(name_to_index_path, "w") as f:
         fieldnames = ["Name", "RNA Index", "VDJ Chain", "SB Index", "Puck ID", "Store Path"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(name_to_index_rows)
 

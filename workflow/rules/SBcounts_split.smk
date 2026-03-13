@@ -79,7 +79,6 @@ rule all:
 rule SBcounts:
     input:
         puck_path = PUCK_PATH,
-        puck_in = PUCK_IN_PATH,
         fastq_output = BASE_FASTQ_PATH,
         spatial_path = BASE_SPATIAL_PATH,
         spatial_tsv = SPATIAL,
@@ -88,6 +87,7 @@ rule SBcounts:
         SBcounts_log = os.path.join(BASE_SB_LOG_PATH, 'SBcount_{n}.log')
     params:
         sub_sample = lambda wildcards: wildcards.n,
+        puck_in = PUCK_IN_PATH,
         conda_path = CONDA_PATH,
         env_path = ENV_PATH,
         src_path = SRC_PATH,
@@ -107,11 +107,11 @@ rule SBcounts:
 
         export PATH="{params.conda_path}:$PATH"
         export PATH="{params.env_path}/bin:$PATH"
-        export JULIA_PACKAGES_PATH="{params.env_path}/share/julia/packages"
-        export JULIA_DEPOT_PATH="{params.env_path}/share/julia/tmp"
-        export JULIA_PROJECT_PATH="{params.env_path}/julia/environments/env"
+        export JULIA_PACKAGES_PATH="/n/home12/nhilgert/.julia/packages"
+        export JULIA_DEPOT_PATH="/n/home12/nhilgert/.julia"
+        export JULIA_PROJECT_PATH="/n/home12/nhilgert/.julia/environments/slidetags"
         export LIB_PUCK_PATH="{input.puck_path}"
-        export LIB_PUCK_IN="{input.puck_in}"
+        export LIB_PUCK_IN="{params.puck_in}"
         export JULIA_NUM_THREADS={threads}
 
         generate_puck_jl="{params.src_path}/SpatialCount/generate_puck_csv.jl"
@@ -150,7 +150,7 @@ rule SBcounts:
                         done
                     fi
 
-                    echo "Running SBcounts for $idx with $puck_id ..." | tee -a {log.SBcounts_log}
+                    echo "Running SBcounts for $idx with $puck_id ..." &>> {log.SBcounts_log}
                     if [ ! -f $puck_csv ]; then
                         echo "$puck_id file doesn't exists, running generate_puck_csv.jl ..." &>> {log.SBcounts_log}
                         julia $generate_puck_jl &>> {log.SBcounts_log} || echo "Failed to run generate_puck_csv.jl" &>> {log.SBcounts_log}
@@ -165,12 +165,14 @@ rule SBcounts:
                     fi
 
                     echo "Running spatial_count.jl ..." &>> {log.SBcounts_log}
-                    julia $spatial_count_jl ${{fastq_path}} ${{working_dir}} &>> {log.SBcounts_log}
+                    julia_log="$working_dir/julia_run.log"
+                    julia $spatial_count_jl ${{fastq_path}} ${{working_dir}} > "$julia_log" 2>&1 || true
+                    cat "$julia_log" &>> {log.SBcounts_log}
 
-                    if [ -f $working_dir/SBcounts.h5 ]; then 
-                        echo -e "SUCCESS" | tee -a {log.SBcounts_log}
+                    if [ -f $working_dir/SBcounts.h5 ]; then
+                        echo -e "SUCCESS" &>> {log.SBcounts_log}
                     else
-                        echo -e "FAILURE" | tee -a {log.SBcounts_log}
+                        echo -e "FAILURE" &>> {log.SBcounts_log}
                     fi
                 fi
             fi

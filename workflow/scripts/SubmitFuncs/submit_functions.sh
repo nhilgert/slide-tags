@@ -102,7 +102,7 @@ submit_read_sheet_job() {
 
     local snakemake_command="snakemake -s \"$base_smk_path/read_check.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\" \
+        --config base_path=\"$BASE_DATA_PATH\" \ \
         src_path=\"$base_src_path\" \
         py_path=\"$python_path\" \
         bcl=\"$bcl\" bcl_path=\"$BCL_MAIN_PATH\" \
@@ -316,7 +316,7 @@ submit_mkfastq_job() {
 
     local snakemake_command="snakemake -s \"$base_smk_path/mkfastq_split.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\" pkg_path=\"$PKG_PATH\" \
+        --config base_path=\"$BASE_DATA_PATH\" \ pkg_path=\"$PKG_PATH\" \
         bcl=\"$bcl\" run_folder=\"$log_folder\" sample=\"$sample_py_list\" \
         --cores all -j \"$chunk_size\" \
         --immediate-submit --notemp --keep-going \
@@ -394,7 +394,7 @@ submit_RNAcounts_job() {
 
     local snakemake_command="snakemake -s \"$base_smk_path/RNAcounts_split.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\" \
+        --config base_path=\"$BASE_DATA_PATH\" \ \
         pkg_path=\"$PKG_PATH\" \
         ref_path=\"$REF_PATH\" \
         src_path=\"$base_src_path\" \
@@ -477,7 +477,7 @@ submit_Cellbender_job() {
 
     local snakemake_command="snakemake -s \"$base_smk_path/Cellbender_split.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\" \
+        --config base_path=\"$BASE_DATA_PATH\" \ \
         env_path=\"$ENV_PATH\" \
         bcl=\"$bcl\" run_folder=\"$log_folder\" \
         sample=\"$sample_py_list\" \
@@ -565,7 +565,7 @@ submit_SBcount_job() {
 
     local snakemake_command="snakemake -s \"$base_smk_path/SBcounts_split.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\"
+        --config base_path=\"$BASE_DATA_PATH\" \
         conda_path=\"$CONDA_PATH\" \
         env_path=\"$ENV_PATH\" \
         ref_path=\"$REF_PATH\" \
@@ -651,7 +651,7 @@ submit_Spatial_job() {
     
     local snakemake_command="snakemake -s \"$base_smk_path/Spatial_split.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\" \
+        --config base_path=\"$BASE_DATA_PATH\" \ \
         conda_path=\"$CONDA_PATH\" \
         env_path=\"$ENV_PATH\" \
         ref_path=\"$REF_PATH\" \
@@ -698,7 +698,7 @@ submit_move_data_job() {
     fi
     local snakemake_command="snakemake -s \"$base_smk_path/move_data.smk\" \
         --directory \"$log_folder\" \
-        --config base_path=\"$BASE_DATA_PATH\" \
+        --config base_path=\"$BASE_DATA_PATH\" \ \
         bcl=\"$bcl\" \
         run_folder=\"$log_folder\" \
         --cores all --quiet -j 3 --notemp --keep-going \

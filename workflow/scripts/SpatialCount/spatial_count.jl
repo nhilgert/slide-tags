@@ -1,7 +1,6 @@
 using Pkg
 project_path = ENV["JULIA_PROJECT_PATH"]
 Pkg.activate(project_path)
-Pkg.precompile()
 
 # Pkg.add("CSV")
 # Pkg.add("HDF5")
